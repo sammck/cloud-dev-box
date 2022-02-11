@@ -1,0 +1,45 @@
+version: "3"
+
+networks:
+  web:
+    external: true
+  internal:
+    external: false
+
+services:
+  blog:
+    image: wordpress:4.9.8-apache
+    environment:
+      WORDPRESS_DB_PASSWORD:
+    labels:
+      - traefik.http.routers.blog.rule=Host(`blog.apitest.mckelvie.org`)
+      - traefik.http.routers.blog.tls=true
+      - traefik.http.routers.blog.tls.certresolver=lets-encrypt
+      - traefik.port=80
+    networks:
+      - internal
+      - web
+    depends_on:
+      - mysql
+
+  mysql:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD:
+    networks:
+      - internal
+    labels:
+      - traefik.enable=false
+
+  adminer:
+    image: adminer:4.6.3-standalone
+    labels:
+      - traefik.http.routers.adminer.rule=Host(`db-admin.apitest.mckelvie.org`)
+      - traefik.http.routers.adminer.tls=true
+      - traefik.http.routers.adminer.tls.certresolver=lets-encrypt
+      - traefik.port=8080
+    networks:
+      - internal
+      - web
+    depends_on:
+      - mysql

@@ -1,0 +1,17 @@
+{
+    "python.pythonPath": ".venv/bin/python",
+    "[python]": {
+        "editor.insertSpaces": true,
+        "editor.tabSize": 2  
+      },
+      "terminal.integrated.env.osx": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "terminal.integrated.env.windows": {
+        "PYTHONPATH": "${workspaceFolder}/src"
+      },
+      "python.envFile": "${workspaceFolder}/.env"
+  }

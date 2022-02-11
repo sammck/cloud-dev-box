@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "cloud-dev-box"
+version = "0.1.0"
+description = "Create and manage a peer EC2 instance to aid in cloud service development and testing"
+authors = ["Sam McKelvie <dev@mckelvie.org>"]
+license = "MIT"
+
+[tool.poetry.dependencies]
+python = "^3.8"
+fastapi = "^0.73.0"
+SQLAlchemy = "^1.4.31"
+#fastapi-sso = "^0.2.13"
+fastapi-sso = { git = "https://github.com/sammck/fastapi-sso.git", branch = "master" }
+keyring = "^23.5.0"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+uvicorn = "^0.17.1"
+fastapi-jwt-auth = {extras = ["asymmetric"], version = "^0.5.0"}
+python-dotenv = "^0.19.2"
+pulumi = "^3.24.1"
+boto3 = "^1.20.50"
+pulumi-aws = "^4.37.1"
+PyYAML = "^6.0"
+
+[tool.poetry.dev-dependencies]
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

@@ -1,0 +1,14 @@
+#Pulumi stack configuration variables
+- aws:profile: The AWS profile to use for managing the stack. Default is "default".
+- aws:region: The AWS region in which to deploy. Default is the default for the AWS profile being used.
+- owner:  The email address of the person who owns the created aws resources, for tagging
+- n_azs: The number of availability zones to provision for VPc. Default 3.
+- vpc_cidr: The CIDR to use for the VPC.  Default 10..77.0.0/16.
+- n_potential_subnets: The maximum number of subnets that will ever be needed in the VPC.  Default 16.
+- zone_name: The fully qualified domain name of the new zone that the stack will run as. By default, determined from parent_zone_name and zone_prefix. The parent of this zone must already be managed by route53.
+- parent_zone_name: The fully qualified domain name of the parent domain for the newly created subdomain that the stack will run as. Ignored if zone_name is provided. This zone must already be managed by route53. Default is mckelvie.org.
+- zone_prefix: The single domain name component that will be prefixed to parent_zone name for the bewly created subdomain that the stack will run in. Ignored if zone_name is provided. Default is the same as the short pulumi stack name.
+- front_end_instance_type: The EC2 instance type to use for the front end host. Default is "t3.medium".
+- front_end_ssh_public_key: The SSH public key to authorize for login to the frontend EC2 box. By default, this is read from file at front_end_ssh_public_key_file.
+- front_end_ssh_public_key_file: The SSH public key file to read to authorize for login to the frontend EC2 box. Ignored if front_end_ssh_public_key is provided. Default is "~/.ssh/id_rsa.pub".
+- front_end_root_volume_size_gb: The number of gigabytes to allot for disk storage on the front end EC2 instance's root volume.  Default is 40.

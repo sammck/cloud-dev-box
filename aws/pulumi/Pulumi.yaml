@@ -1,0 +1,6 @@
+name: apitest
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: Environment for deploying APIs with traefik

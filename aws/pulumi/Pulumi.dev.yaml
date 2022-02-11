@@ -1,0 +1,3 @@
+config:
+  apitest:owner: sammck@gmail.com
+  aws:region: us-west-2
