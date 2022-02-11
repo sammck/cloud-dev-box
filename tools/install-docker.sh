@@ -13,120 +13,6 @@ if [ "$1" == "--force" ]; then
   force=1
 fi
 
-
-install_client=1
-
-if [ "$force" != "1" ]; then
-    if command_exists docker; then
-        docker_cmd="$(command -v docker)"
-        docker_client_version="$(docker version -f'{{.Client.Version}}' 2>/dev/null || true)"
-        if [ -z "$docker_client_version" ]; then
-            echo "Docker client is installed and in PATH at $docker_cmd, but the client version cannot be fetched." >&2
-            echo "Please uninstall and run install-docker.sh again, or run with --force." >&2
-            exit 1
-        fi
-        if check_version_ge "$docker_client_version" "$min_docker_client_version"; then
-            echo "Docker client version $docker_client_version is installed and in PATH at $docker_cmd, and" >&2
-            echo "meets the minimum version $min_docker_client_version. No update is necessary. If you" >&2
-            echo "wish to update, please run install-docker.sh again with --force." >&2
-            install_client=""
-        else
-            echo "Docker client version $docker_client_version is installed and in PATH at $docker_cmd, but" >&2
-            echo "does not meet the minimum version $min_docker_client_version. Attempting to update." >&2
-        fi
-    fi
-else
-    echo "Forcing install/upgrade of docker" >&2
-fi
-
-if [ "$install_client" == "1" ]; then
-    uninstall_os_packages docker-engine docker.io containerd runc
-
-    pkglist=()
-
-    add_os_packages_if_missing        pkglist ca-certificates curl gnupg lsb-release
-    add_os_package_if_command_missing pkglist sha256sum coreutils
-
-    update_and_install_os_packages "${pkglist[@]}"
-
-    install_gpg_keyring_if_missing "https://download.docker.com/linux/ubuntu/gpg" "/usr/share/keyrings/docker-archive-keyring.gpg"
-    update_apt_sources_list "/etc/apt/sources.list.d/docker.list" "/usr/share/keyrings/docker-archive-keyring.gpg" "https://download.docker.com/linux/ubuntu"
-
-    update_and_install_os_packages_if_missing containerd.io
-
-    pkglist=()
-    if [ "$force" == "1" ]; then
-        add_os_packages pkglist docker-ce docker-ce-cli
-    else
-        add_os_package_if_outdated pkglist docker-ce "$min_docker_client_version"
-        add_os_package_if_outdated pkglist docker-ce-cli "$min_docker_client_version"
-    fi
-    update_and_upgrade_os_packages "${pkglist[@]}"
-
-    if ! command_exists docker; then
-        echo "ERROR: Docker client still not found in PATH after install/upgrade." >&2
-        exit 1
-    fi
-
-    docker_cmd="$(command -v docker)"
-    docker_client_version="$(docker version -f'{{.Client.Version}}' 2>/dev/null || true)"
-    if [ -z "$docker_client_version" ]; then
-        echo "ERROR: Docker client installed/upgraded and in PATH at $docker_cmd, but the client version cannot be fetched." >&2
-        echo "Please uninstall and run install-docker.sh again" >&2
-        exit 1
-    fi
-    if ! check_version_ge "$docker_client_version" "$min_docker_client_version"; then
-        echo "ERROR: Docker client installed/upgraded, but version $docker_client_version still" >&2
-        echo "does not meet the minimum version $min_docker_client_version." >&2
-        exit 1
-    fi
-    echo "Docker client version successfully installed/upgraded to version $docker_client_version" >&2
-fi
-
-docker_server_version="$(docker version -f'{{.Server.Version}}' 2>/dev/null || true)"
-
-if [ -z "$docker_server_version" ]; then
-    docker_gid="$(get_gid_of_group docker 2>/dev/null || true)"
-    if [ -z "$docker_gid" ]; then
-        echo "Docker server is not reachable by the client, and there is no 'docker' linux group present." >&2
-        echo "Please update docker client configuration to allow access to the docker server." >&2
-        exit 1
-    fi
-
-    if ! os_group_includes_user docker; then
-        echo "User $USER is not in os group 'docker'; adding..." >&2
-        if ! os_group_add_user docker; then
-            echo "Docker server is not reachable by the client, and adding user $USER to os group 'docker' failed." >&2
-            echo "Please update docker client configuration to allow access to the docker server." >&2
-            exit 1
-        fi
-    fi
-
-    docker_server_version="$(run_with_group docker docker version -f'{{.Server.Version}}' 2>/dev/null || true)"
-    if [ -z "$docker_server_version" ]; then
-        echo "Docker server is not reachable by the client, even after adding user $USER to os group 'docker'." >&2
-        echo "Please update docker client configuration to allow access to the docker server." >&2
-        exit 1
-    fi
-fi
-
-if ! check_version_ge "$docker_server_version" "$min_docker_server_version"; then
-    echo "Docker server is reachable by the client, but its version $docker_server_version" >&2
-    echo "does not meet the minimum version $min_docker_server_version. Please update" >&2
-    echo "the docker server (which may be remote)." >&2
-    exit 1
-fi
-
-echo "Docker server is reachable by the docker client, and its version, $docker_server_version," >&2
-echo "meets the minimum version $min_docker_server_version. No further update of the docker server is necessary." >&2
-
-# stuff for multi-arch builds
-pkglist=()
-
-add_os_packages_if_missing        pkglist binfmt-support qemu-user-static
-
-update_and_install_os_packages "${pkglist[@]}"
-
 function get_binfmt_field() {
     local target_architecture="$1"; shift
     local field_name="$1"; shift
@@ -210,5 +96,160 @@ function fix_all_binfmt_qemu_binaries_if_needed() {
     return 0
 }
 
-fix_all_binfmt_qemu_binaries_if_needed
-echo "All QEMU interpreter binaries have been registered with binfmts as --fix-binary; no further update necessary" >&2
+function do_install() {
+    install_client=1
+
+    if [ "$force" != "1" ]; then
+        if command_exists docker; then
+            docker_cmd="$(command -v docker)" || return $?
+            docker_client_version="$(docker version -f'{{.Client.Version}}' 2>/dev/null || true)"
+            if [ -z "$docker_client_version" ]; then
+                echo "Docker client is installed and in PATH at $docker_cmd, but the client version cannot be fetched." >&2
+                echo "Please uninstall and run install-docker.sh again, or run with --force." >&2
+                return 1
+            fi
+            if check_version_ge "$docker_client_version" "$min_docker_client_version"; then
+                echo "Docker client version $docker_client_version is installed and in PATH at $docker_cmd, and" >&2
+                echo "meets the minimum version $min_docker_client_version. No update is necessary. If you" >&2
+                echo "wish to update, please run install-docker.sh again with --force." >&2
+                install_client=""
+            else
+                echo "Docker client version $docker_client_version is installed and in PATH at $docker_cmd, but" >&2
+                echo "does not meet the minimum version $min_docker_client_version. Attempting to update." >&2
+            fi
+        fi
+    else
+        echo "Forcing install/upgrade of docker" >&2
+    fi
+
+    if [ "$install_client" == "1" ]; then
+        uninstall_os_packages docker-engine docker.io containerd runc || return $?
+
+        pkglist=()
+
+        add_os_packages_if_missing        pkglist ca-certificates curl gnupg lsb-release || return $?
+        add_os_package_if_command_missing pkglist sha256sum coreutils || return $?
+
+        update_and_install_os_packages "${pkglist[@]}" || return $?
+
+        install_gpg_keyring_if_missing "https://download.docker.com/linux/ubuntu/gpg" "/usr/share/keyrings/docker-archive-keyring.gpg" || return $?
+        update_apt_sources_list "/etc/apt/sources.list.d/docker.list" "/usr/share/keyrings/docker-archive-keyring.gpg" "https://download.docker.com/linux/ubuntu" || return $?
+
+        update_and_install_os_packages_if_missing containerd.io || return $?
+
+        # HACK: install of docker-ce 20 often fails on first try even though it actually succeeded
+        # see https://github.com/docker/for-linux/issues/989. So, we will try to install
+        # docker-ce one, and if it fails, try once again.
+        pkglist=()
+        if [ "$force" == "1" ]; then
+            add_os_packages pkglist docker-ce || return $?
+        else
+            add_os_package_if_outdated pkglist docker-ce "$min_docker_client_version" || return $?
+        fi
+        if [[ "${#pkglist[@]}" -gt 0  ]]; then
+            if update_and_upgrade_os_packages "${pkglist[@]}"; then
+            echo "Install/upgrade of docker-ce succeeded on first attempt..." >&2
+            else
+            echo "Install/upgrade of docker-ce failed on first attempt. Retrying to work around docker-ce install bug..." >&2
+                if update_and_upgrade_os_packages "${pkglist[@]}"; then
+                    echo "Install/upgrade of docker-ce package succeeded on second attempt..." >&2
+                else
+                    echo "Install/upgrade of docker-ce package failed on second attempt. Check error output above and journalctl -xe." >&2
+                    return 1
+                fi
+            fi
+        fi
+
+        pkglist=()
+        if [ "$force" == "1" ]; then
+            add_os_packages pkglist docker-ce-cli || return $?
+        else
+            add_os_package_if_outdated pkglist docker-ce-cli "$min_docker_client_version" || return $?
+        fi
+        update_and_upgrade_os_packages "${pkglist[@]}" || return $?
+
+        if ! command_exists docker; then
+            echo "ERROR: Docker client still not found in PATH after install/upgrade." >&2
+            return 1
+        fi
+
+        docker_cmd="$(command -v docker)" || return $?
+        docker_client_version="$(docker version -f'{{.Client.Version}}' 2>/dev/null || true)"
+        if [ -z "$docker_client_version" ]; then
+            echo "ERROR: Docker client installed/upgraded and in PATH at $docker_cmd, but the client version cannot be fetched." >&2
+            echo "Please uninstall and run install-docker.sh again" >&2
+            return 1
+        fi
+        if ! check_version_ge "$docker_client_version" "$min_docker_client_version"; then
+            echo "ERROR: Docker client installed/upgraded, but version $docker_client_version still" >&2
+            echo "does not meet the minimum version $min_docker_client_version." >&2
+            return 1
+        fi
+        echo "Docker client version successfully installed/upgraded to version $docker_client_version" >&2
+    fi
+
+    docker_server_version="$(docker version -f'{{.Server.Version}}' 2>/dev/null || true)"
+
+    if [ -z "$docker_server_version" ]; then
+        docker_gid="$(get_gid_of_group docker 2>/dev/null || true)"
+        if [ -z "$docker_gid" ]; then
+            echo "Docker server is not reachable by the client, and there is no 'docker' linux group present." >&2
+            echo "Please update docker client configuration to allow access to the docker server." >&2
+            return 1
+        fi
+
+        if ! os_group_includes_user docker; then
+            echo "User $USER is not in os group 'docker'; adding..." >&2
+            if ! os_group_add_user docker; then
+                echo "Docker server is not reachable by the client, and adding user $USER to os group 'docker' failed." >&2
+                echo "Please update docker client configuration to allow access to the docker server." >&2
+                return 1
+            fi
+        fi
+
+        docker_server_version="$(run_with_group docker docker version -f'{{.Server.Version}}' 2>/dev/null || true)"
+        if [ -z "$docker_server_version" ]; then
+            echo "Docker server is not reachable by the client, even after adding user $USER to os group 'docker'." >&2
+            echo "Please update docker client configuration to allow access to the docker server." >&2
+            return 1
+        fi
+    fi
+
+    if ! check_version_ge "$docker_server_version" "$min_docker_server_version"; then
+        echo "Docker server is reachable by the client, but its version $docker_server_version" >&2
+        echo "does not meet the minimum version $min_docker_server_version. Please update" >&2
+        echo "the docker server (which may be remote)." >&2
+        return 1
+    fi
+
+    echo "Docker server is reachable by the docker client, and its version, $docker_server_version," >&2
+    echo "meets the minimum version $min_docker_server_version. No further update of the docker server is necessary." >&2
+
+    # stuff for multi-arch builds
+    pkglist=()
+
+    add_os_packages_if_missing pkglist binfmt-support qemu-user-static || return $?
+
+    update_and_install_os_packages "${pkglist[@]}" || return $?
+
+    fix_all_binfmt_qemu_binaries_if_needed || return $?
+    echo "All QEMU interpreter binaries have been registered with binfmts as --fix-binary; no further update necessary" >&2
+}
+
+RETCODE=0
+do_install || RETCODE=$?
+if [[ "$RETCODE" -ne 0 ]]; then
+  echo "Docker installation failed." >&2
+  exit 1
+fi
+
+echo "Docker installation successful!" >&2
+
+should_wrap=0
+should_run_with_group "docker" || should_wrap=$?
+if [[ "$should_wrap" -eq 0 ]]; then
+    echo "WARNING: Command 'docker' requires membership in OS group 'docker', which is newly added for" >&2
+    echo "user $(get_current_os_user), and is not yet effective for the current process. Please logout" >&2
+    echo " and log in again, or in the mean time run docker with:" >&2
+    echo "         sudo -E -u $user docker [<arg>...]" >&2
+fi

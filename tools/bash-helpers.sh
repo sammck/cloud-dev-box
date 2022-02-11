@@ -710,21 +710,49 @@ function escape_arglist() {
   printf "%q " "$@"
 }
 
-function run_with_group() {
+# returns 0 if run_with_group will help, 1 if run_with_group is not necessary, 2 if user is not in the group,
+# and 3 for other errors.
+function should_run_with_group() {
   local group="$1"; shift
-  local user="$(get_current_os_user)" || return 1
+  local user="$(get_current_os_user)" || return 3
   if os_group_includes_current_process "$group"; then
-    # already in group; just run the command
-    "$@" || return $?
+    # process already in group
+    return 1
   else
     if os_group_includes_user "$group" "$user"; then
-      echo "Command '$1' requires membership in group $group, which is newly added for user $user, and is" >&2
-      echo "not effective for the current process. Requires sudo until login session is restarted" >&2
-      sudo -E -u "$user" "$@" || return $?
+      # user is in group but process is not
+      return 0
     else
-      echo "Command '$1' requires membership in group $group, which user $user is not in" >&2
-      return 1
+      # user is not in group
+      return 2
     fi
   fi
   return 0
+}
+
+function run_with_group() {
+    local group="$1"; shift
+    local user="$(get_current_os_user)" || return 1
+    local should_wrap=0
+    should_run_with_group "$group" || should_wrap=$?
+
+    if [[ "$should_wrap" -eq 1 ]]; then
+        # already in group; just run the command
+        "$@" || return $?
+    else
+        if [[ "$should_wrap" -eq 0 ]]; then
+            echo "NOTE: Command '$1' requires membership in group $group, which is newly added for user $user, and is" >&2
+            echo "not effective for the current process. Requires sudo until login session is restarted..." >&2
+            sudo -E -u "$user" "$@" || return $?
+        else
+            if [[ "$should_wrap" -eq 2 ]]; then
+                echo "Command '$1' requires membership in group $group, which user $user is not in" >&2
+                return 1
+            else
+                echo "Unable to determine if user/process are in group $group" >&2
+                return 1
+            fi
+        fi
+    fi
+    return 0
 }
