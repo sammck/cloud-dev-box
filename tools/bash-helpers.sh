@@ -254,8 +254,12 @@ function update_apt_sources_list() {
         if files_are_identical "$tmp_file" "$dest_file"; then
             return 0
         fi
+        echo "Updating apt-get sources list for $dest_file (requires sudo)" >&2
+        echo "Old: $(cat "$dest_file")" >&2
+    else
+        echo "Creating apt-get sources list for $dest_file (requires sudo)" >&2
     fi
-    echo "Updating apt-get sources list for $dest_file (sudo required)" >&2
+    echo "New: $(cat "$tmp_file")" >&2
     sudo chmod 644 "$tmp_file" || return $?
     invalidate_os_package_list
     sudo mv "$tmp_file" "$dest_file" || return $?

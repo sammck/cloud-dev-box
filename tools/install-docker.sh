@@ -132,8 +132,18 @@ function do_install() {
 
         update_and_install_os_packages "${pkglist[@]}" || return $?
 
+        variant="stable"
+        lsbrelease="$(lsb_release -cs)" || return $?
+
+        # HACK: docker does not currently have a repo for ubuntu 22.04 (jammy), but they recommend using
+        #   the ubuntu 20.04 (focal) repo. 
+        if [ "$lsbrelease" == "jammy" ]; then
+            lsbrelease=focal
+        fi
+
         install_gpg_keyring_if_missing "https://download.docker.com/linux/ubuntu/gpg" "/usr/share/keyrings/docker-archive-keyring.gpg" || return $?
-        update_apt_sources_list "/etc/apt/sources.list.d/docker.list" "/usr/share/keyrings/docker-archive-keyring.gpg" "https://download.docker.com/linux/ubuntu" || return $?
+        update_apt_sources_list "/etc/apt/sources.list.d/docker.list" "/usr/share/keyrings/docker-archive-keyring.gpg" \
+                "https://download.docker.com/linux/ubuntu" "$variant" "$lsbrelease" || return $?
 
         update_and_install_os_packages_if_missing containerd.io || return $?
 
