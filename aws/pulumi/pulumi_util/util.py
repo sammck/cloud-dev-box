@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
-from typing import Any, List, Tuple, TypeVar, Optional
+from typing import Any, Callable, List, Tuple, TypeVar, Optional, Union
 
 import subprocess
 import os
 import json
 import ipaddress
 import yaml
+import boto3.session
+import botocore.client
 
 import pulumi
 from pulumi import (
@@ -30,11 +32,71 @@ from pulumi_aws import (
   secretsmanager,
 )
 
+T = TypeVar('T')
+def future_func(func: Callable[..., T]) -> Callable[..., Output[T]]:
+  def wrapper(*future_args):
+    result = Output.all(*future_args).apply(lambda args: func(*args))
+    return result
+  return wrapper
+  
 
 TTL_SECOND: int = 1
 TTL_MINUTE: int = TTL_SECOND * 60
 TTL_HOUR: int = TTL_MINUTE * 60
 TTL_DAY: int = TTL_HOUR * 24
+
+def future_val(v: Union[T, Output[T]]) -> Output[T]:
+  result = Output.all(v).apply(lambda args: args[0])
+  return result
+
+def sync_get_processor_arches_from_instance_type(instance_type: str, region_name: Optional[str]=None) -> List[str]:
+  sess = boto3.session.Session(region_name=region_name)
+  bec2: botocore.client.EC2 = sess.client('ec2')
+
+  resp = bec2.describe_instance_types(
+      InstanceTypes=[ instance_type ],
+    )
+  metas = resp['InstanceTypes']
+  if len(metas) == 0:
+    raise RuntimeError(f"Invalid EC2 instance type \"{instance_type}\"")
+  meta = metas[0]
+  processor_info = meta['ProcessorInfo']
+  arches = processor_info['SupportedArchitectures']
+  if len(arches) < 1:
+    raise RuntimeError(f"No processor architectures for instance type \"{instance_type}\"")
+  return arches
+
+def sync_get_ami_arch_from_processor_arches(processor_arches: Union[str, List[str]]) -> str:
+  if not isinstance(processor_arches, list):
+    processor_arches = [ processor_arches ]
+
+  if len(processor_arches) == 0:
+    raise RuntimeError("Empty processor architecture list--cannot determine AMI architecture")
+
+  result: Optional[str] = None
+
+  for processor_arch in processor_arches:
+    if processor_arch in [ "x86_64", "amd64" ]:
+      result = "amd64"
+    elif processor_arch in [ "arm64", "aarch64" ]:
+      result = "arm64"
+    if not result is None:
+      break
+  if result is None:
+    raise RuntimeError(f"Unsupported processor architectures {processor_arches}--cannot determine AMI architecture")
+  return result
+
+def sync_get_ami_arch_from_instance_type(instance_type: str, region_name: Optional[str]=None) -> str:
+  processor_arches = sync_get_processor_arches_from_instance_type(instance_type, region_name=region_name)
+  result = sync_get_ami_arch_from_processor_arches(processor_arches)
+  return result
+
+def get_ami_arch_from_instance_type(instance_type: Output[str], region_name: Optional[Output[str]]=None) -> Output[str]:
+  if region_name is None:
+    region_name = aws.get_region().name
+  result = Output.all(instance_type, region_name).apply(lambda args: sync_get_ami_arch_from_instance_type(*args))
+  return result
+
 
 def yamlify_promise(future_obj: Output[Any], indent: int=1, default_flow_style: Optional[bool]=None, width: int=80, prefix_text: Optional[str]=None) -> Output[str]:
   """Convert a Promise object to a Promise to yamlify the result of that Promise.

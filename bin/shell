@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -e
+
+PROJECT_BIN_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+source "$PROJECT_BIN_DIR/activate"
+bash "$@" || exit $?

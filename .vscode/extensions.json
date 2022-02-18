@@ -1,6 +1,5 @@
 {
     "recommendations": [
-        "bungcip.better-toml",
-        "damildrizzy.fastapi-snippets"
+        "bungcip.better-toml"
     ]
 }

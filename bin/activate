@@ -1,0 +1,99 @@
+# !/usr/bin/env bash
+
+PROJECT_BIN_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+PROJECT_DIR="$( cd -- "$PROJECT_BIN_DIR/.." &> /dev/null && pwd )"
+PROJECT_INSTALL_DIR="$PROJECT_DIR/install"
+PROJECT_BUILD_DIR="$PROJECT_DIR/build"
+PROJECT_SRC_DIR="$PROJECT_DIR/src"
+source "$PROJECT_BIN_DIR/path-helpers.sh"
+VIRTUAL_ENV="$PROJECT_DIR/.venv"
+
+if [ -z "$PROJECT_PREV_PATH" ]; then
+  PROJECT_PREV_PATH="$PATH"
+fi
+
+if [ -z "$PROJECT_PREV_PYTHONPATH" ]; then
+  PROJECT_PREV_PYTHONPATH="$PYTHONPATH"
+fi
+
+if [ -z "$PROJECT_PREV_PS1" ]; then
+  export PROJECT_PREV_PS1="$PS1"
+fi
+
+if [ -z "$PROJECT_PREV_STICKY_PS1" ]; then
+  export PROJECT_PREV_STICKY_PS1="$STICKY_PS1"
+fi
+
+PATH="$(path_prepend "$VIRTUAL_ENV/bin")"
+PATH="$(path_prepend "$PROJECT_BUILD_DIR/bin")"
+PATH="$(path_prepend "$PROJECT_INSTALL_DIR/bin")"
+PATH="$(path_prepend "$PROJECT_BIN_DIR")"
+
+PYTHONPATH="$(path_prepend "$PROJECT_SRC_DIR/python" "$PYTHON_PATH" 1)"
+export PATH
+export PYTHONPATH
+
+_SAVE_PATH="$PATH"
+_SAVE_PS1="$PS1"
+source "$VIRTUAL_ENV/bin/activate"
+PATH="$_SAVE_PATH"
+PS1="$_SAVE_PS1"
+unset _SAVE_PATH
+unset _SAVE_PS1
+
+#copy_function() {
+#  test -n "$(declare -f "$1")" || return 0
+#  eval "${_/$1/$2}"
+#}
+#
+#copy_function deactivate venv_deactivate
+#unset copy_function
+
+PULUMI_DIR="$PROJECT_DIR/install/pulumi"
+PYTHON="$VIRTUAL_ENV/bin/python3"
+
+
+if [ -z "${VIRTUAL_ENV_DISABLE_PROMPT-}" ] ; then
+    # echo "PROJECT_PREV_PS1=$PROJECT_PREV_PS1"
+    # echo "PROJECT_PREV_STICKY_PS1=$PROJECT_PREV_STICKY_PS1"
+    _prev_ps1="$PROJECT_PREV_PS1"
+    if [ -z "$PROJECT_PREV_PS1" ]; then
+        _prev_ps1="$PROJECT_PREV_STICKY_PS1"
+    fi
+    PS1="(prj:$(basename "$PROJECT_DIR")) $_prev_ps1"
+    unset _prev_ps1
+    export PS1
+    export STICKY_PS1="$PS1"
+fi
+
+deactivate () {
+  if [ -z "$PROJECT_PREV_PS1" ]; then
+    unset PS1
+  else
+    export PS1="$PROJECT_PREV_PS1"
+  fi
+  if [ -z "$PROJECT_PREV_STICKY_PS1" ]; then
+    unset STICKY_PS1
+  else
+    export STICKY_PS1="$PROJECT_PREV_STICKY_PS1"
+  fi
+  if [ -z "$PROJECT_PREV_PYTHONPATH" ]; then
+    unset PYTHONPATH
+  else
+    export PYTHONPATH="$PROJECT_PREV_PYTHONPATH"
+  fi
+  if [ -n "$PROJECT_PREV_PATH" ]; then
+    export PATH="$PROJECT_PREV_PATH"
+  fi
+  unset PROJECT_PREV_PATH
+  unset PROJECT_PREV_PYTHONPATH
+  unset PROJECT_PREV_PS1
+  unset PYTHON
+  unset PROJECT_DIR
+  unset PROJECT_BUILD_DIR
+  unset PROJECT_BIN_DIR
+  unset PROJECT_INSTALL_DIR
+  unset PULUMI_DIR
+  unset VIRTUAL_ENV
+  unset -f deactivate
+}

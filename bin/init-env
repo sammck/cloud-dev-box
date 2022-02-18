@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -eo pipefail
+
+BIN_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+PROJECT_DIR="$( dirname "$BIN_DIR" )"
+
+function do_init_env() {
+    cd "$PROJECT_DIR" || return $?
+
+    "$BIN_DIR/install-prerequisites.sh"  || return $?
+
+    # . "$BIN_DIR/bash-helpers.sh" 
+
+    mkdir -p build/common/bin  || return $?
+    mkdir -p install/bin  || return $?
+
+    poetry install  || return $?
+
+    . "$BIN_DIR/activate"
+
+    PULUMI_DIR="$PROJECT_DIR/install/pulumi"
+
+    python -m install_pulumi -u -d "$PULUMI_DIR"  || return $?
+}
+
+
+RETCODE=0
+do_init_env || RETCODE=$?
+if [[ "$RETCODE" -ne 0 ]]; then
+  echo "Project environment initialization failed." >&2
+  exit 1
+fi
+
+echo "Project environment initialization succeeded!" >&2

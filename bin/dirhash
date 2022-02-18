@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -eo pipefail
+
+BIN_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+source "$BIN_DIR/activate"
+python -m dirhash "$@"

@@ -1,0 +1,110 @@
+[default]
+# The name of this project. By default, the name of the git project directory
+# containing config.py
+project = "@jinja {{get_default_project_name()}}"
+
+# The absolute path of the project root directory. You should not need to override this.
+project_dir = "@jinja {{get_project_dir()}}"
+
+# The name of the current environment.  Lazily evaluated; Do not override.
+environment = "@jinja {{this.current_env}}"
+
+# The AWS profile to use for managing the stack. Default is "default".
+aws_profile = "default"
+
+# The AWS region in which to deploy. Default is the default for the AWS profile being used.
+aws_region = "@jinja {{get_default_aws_region()}}"
+
+# The AWS account number associated with the AWS configuration. You should not need
+# to override this, since it is derived from other AWS settings.
+aws_account = "@jinja {{get_default_aws_account()}}"
+
+# The pulumi stack that is defined by this environment. May be overridden. By
+# default, the name of the environment is used.
+pulumi_stack = "@jinja {{this.current_env}}"
+
+# The AWS region in which to create the pulumi backend S3 bucket.
+# Default is the region used for deployment. 
+pulumi_backend_aws_region = "@jinja {{this.aws_region}}"
+
+# The pulumi backend URI. This is an S3 bucket/key that will hold Pulumi stack state
+# for all stacks in a given region. We self-host Pulumi state so we do not need to
+# mess with the proprietary Pulumi cloud service.  The S3 bucket will be directed
+# on the first deployment. For reliability and performance it is best to have a
+# separate bucket for each region, so that there are not cross-region dependencies.
+# A single bucket may be shared between multiple projects, as long as a subkey
+# distinguishes between them in "pulumi_backend". All pulumi stacks share the same
+# pulumi_backend.
+pulumi_backend_s3_bucket = "@jinja {{this.aws_account}}-{{this.pulumi_backend_aws_region}}-cloud-dev"
+pulumi_backend = "@jinja s3://{{this.pulumi_backend_s3_bucket}}/cloud-dev/prj/{{this.project}}/.pulumi"
+# The email address of the person who owns the created AWS resources, for tagging. By
+# default, this will be determined from the local GIT configuration
+owner_email = "@jinja {{get_git_user_email()}}"
+
+# The friendly first/last name of the person who owns the created AWS resources, for tagging. By
+# default, this will be determined from the local GIT configuration
+owner_friendly_name = "@jinja {{get_git_user_friendly_name()}}"
+
+# The AWS subnet id of the externally managed VPC subnet that the front end will run in. If
+# provided, then this stack will not create and manage the VPC. Normally
+# this should be left blank.
+#front_end_subnet_id = "subnet-b1618a9b"
+
+# The number of availability zones to provision for a managed AWS VPC. Default 3.
+n_azs = 3
+
+# The CIDR to use for the VPC. Default 10.77.0.0/16.
+vpc_cidr = "10.77.0.0/16"
+
+# The maximum number of subnets that will ever be needed in the VPC. Determines the size
+# of each subnet under the VPC; larger values will reduce the maximum size of each
+# subnet. Default 16.
+n_potential_subnets = 16
+
+# True if the Route53 zone the stack runs on is managed by this stack.
+# If false, then this stack will not create and manage the DNS domain, although it will still
+# create and manage DNS records within that domain as required by this service. Normally
+# this should be left true, unless this is a production stack and you want the service to run as
+# your main root domain.
+managed_zone = true
+
+# The fully qualified domain name of the new managed zone that the stack will run as.
+# By default, determined from parent_zone_name and zone_prefix.
+# The parent of this zone must already be managed by route53.
+#zone_name = "mycloud.mydomain.com"
+
+# The fully qualified domain name of the parent domain for the newly created
+# and managed subdomain that the stack will run as. Ignored if zone_name is
+# provided. This zone must already be managed by route53.
+#parent_zone_name = "mydomain.com"
+
+# The single domain name component that will be prefixed to parent_zone name for
+# the newly created and managed subdomain that the stack will run in. Ignored if zone_name
+# is provided. Default is the value of pulumi_stack.
+#zone_prefix = "dev"
+
+# The EC2 instance type to use for the front end host. Default is "t3.medium".
+front_end_instance_type = "t3.medium"
+
+# The SSH public key to authorize for login to the frontend EC2 box. By default, this is read from file at front_end_ssh_public_key_file.
+#front_end_ssh_public_key = "ssh-rsa AAAAB3Nza...uODrtRjkJ5 alan@turing.com"
+
+# The SSH public key file to read to authorize for login to the frontend EC2 box. Ignored if front_end_ssh_public_key is provided. Default is "~/.ssh/id_rsa.pub".
+front_end_ssh_public_key_file = "~/.ssh/id_rsa.pub"
+
+# The number of gigabytes to allot for disk storage on the front end EC2 instance's root volume. Default is 40.
+front_end_root_volume_size_gb = 40
+
+#myfunc_result = "@jinja {{myfunc(1, 2, 'hello', this.current_env, foo='bar')}}"
+
+[development]
+pulumi_stack = "dev"
+
+[staging]
+pulumi_stack = "staging"
+
+[testing]
+pulumi_stack = "test"
+
+[production]
+pulumi_stack = "prod"

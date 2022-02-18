@@ -39,6 +39,9 @@ from pulumi_util.util import (
   yamlify_promise,
   list_of_promises,
   default_val,
+  get_ami_arch_from_instance_type,
+  future_val,
+  future_func,
 )
 
 #-----------------------------------------------------
@@ -365,6 +368,7 @@ front_end_instance_profile = aws.iam.InstanceProfile(
 
 # select an EC2 instance type for the front end
 ec2_front_end_instance_type = default_val(config.get('front_end_instance_type'), 't3.medium')
+front_end_ami_arch = get_ami_arch_from_instance_type(ec2_front_end_instance_type)
 
 # select the root volume size for the front end
 front_end_root_volume_size_gb: int = default_val(config.get_int('front_end_root_volume_size_gb'), 40)
@@ -386,13 +390,21 @@ front_end_keypair = aws.ec2.KeyPair(
 
 AMI_OWNER_CANONICAL: str = "099720109477"  # The publisher of Ubunti AMI's
 
+@future_func
+def get_ami_name_filter(ami_arch: str) -> str:
+  return f"ubuntu/images/hvm-ssd/ubuntu-focal-20.04-{ami_arch}-server-*"
+
 # Find the most recent AMI for Ubuntu 20.04
+
+front_end_image_arch = front_end_cpu_arch
+if front_end_image_arch == 'x86_64':
+  front_end_image_arch = 'amd64'
 ubuntu = aws.ec2.get_ami(
     most_recent=True,
     filters=[
         aws.ec2.GetAmiFilterArgs(
             name="name",
-            values=[ "ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*" ],
+            values=[ get_ami_name_filter() ],
           ),
         aws.ec2.GetAmiFilterArgs(
             name="virtualization-type",

@@ -8,7 +8,8 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-build/
+/build/
+/install/
 develop-eggs/
 dist/
 downloads/
@@ -129,3 +130,8 @@ dmypy.json
 .pyre/
 
 /poetry.lock
+
+# Ignore dynaconf secret and local files
+config/.*.toml
+config/*.local.toml
+

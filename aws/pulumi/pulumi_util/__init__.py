@@ -8,4 +8,7 @@ from .util import (
   jsonify_promise,
   list_of_promises,
   default_val,
+  get_ami_arch_from_instance_type,
+  future_val,
+  future_func,
 )

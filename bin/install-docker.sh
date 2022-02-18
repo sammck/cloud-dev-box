@@ -141,9 +141,9 @@ function do_install() {
             lsbrelease=focal
         fi
 
-        install_gpg_keyring_if_missing "https://download.docker.com/linux/ubuntu/gpg" "/usr/share/keyrings/docker-archive-keyring.gpg" || return $?
+        update_gpg_keyring "https://download.docker.com/linux/ubuntu/gpg" "/usr/share/keyrings/docker-archive-keyring.gpg" "gpg --dearmor" || return $?
         update_apt_sources_list "/etc/apt/sources.list.d/docker.list" "/usr/share/keyrings/docker-archive-keyring.gpg" \
-                "https://download.docker.com/linux/ubuntu" "$variant" "$lsbrelease" || return $?
+                "https://download.docker.com/linux/ubuntu" "$lsbrelease" "$variant" || return $?
 
         update_and_install_os_packages_if_missing containerd.io || return $?
 

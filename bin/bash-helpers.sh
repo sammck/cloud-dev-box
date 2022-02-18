@@ -10,11 +10,11 @@ function get_tmp_dir() {
     echo "$tmp_dir"
 }
 
-# splits a version string in the form [<epoch>[<non-numeric>]:]<major>[<non-numeric>][.<minor>[<non-numeric>][.<subminor[<non-numeric>]]]
+# splits a version string in the form [<epoch>[<non-numeric>]:]<major>[<non-numeric>][.<minor>[<non-numeric>][.<subminor>][<tail>]
 # Non-numeric data is discarded.
 # Missing fields are set to 0.
 # writes the result as a space-delimited string:
-#     <epoch> <major> <minor> <subminor>
+#     <epoch> <major> <minor> <subminor> <tail>
 function get_split_version() {
     local version="$1"; shift
 
@@ -27,6 +27,8 @@ function get_split_version() {
     fi
     local _minor="$(awk -F. '{print $2}' <<< "$version" | sed -n 's/^\([0-9]\+\).*$/\1/p')"
     local _subminor="$(awk -F. '{print $3}' <<< "$version" | sed -n 's/^\([0-9]\+\).*$/\1/p')"
+    local _tail="$(sed -n 's/^\([0-9]\+:\)\?\([a-zA-Z0-9]\+\.\)\?\([a-zA-Z0-9]\+\.\)\?\([a-zA-Z]*[0-9]\+\)\(.*\)$/\5/p' <<< "$version")"
+
     # echo "pre_validate=$epoch:$_major.$_minor.$_subminor"
 
     if [ -z "$_epoch" ]; then
@@ -41,11 +43,12 @@ function get_split_version() {
     if [ -z "$_subminor" ]; then
       _subminor=0
     fi
-    echo "$_epoch $_major $_minor $_subminor"
+    _tail="$(printf '%q' "$_tail")"
+    echo "$_epoch $_major $_minor $_subminor $_tail"
     # return 0
 }
 
-# splits a version string in the form [<epoch>[<non-numeric>]:]<major>[<non-numeric>][.<minor>[<non-numeric>][.<subminor[<non-numeric>]]]
+# splits a version string in the form [<epoch>[<non-numeric>]:]<major>[<non-numeric>][.<minor>[<non-numeric>][.<subminor>][<tail>]
 # Non-numeric data is discarded.
 # Puts results into provided named variables.
 function split_version() {
@@ -53,16 +56,22 @@ function split_version() {
     local major_name="$1"; shift
     local minor_name="$1"
     local subminor_name="$2"
-    local epoch_name="$3"
+    local tail_name="$3"
+    local epoch_name="$4"
 
     local split_str="$(get_split_version "$version")" || return $?
     local split_arr=( $split_str )
-    eval "$major_name='${split_arr[1]}'"
+    if [ -n "$major_name" ]; then
+        eval "$major_name='${split_arr[1]}'"
+    fi
     if [ -n "$minor_name" ]; then
         eval "$minor_name='${split_arr[2]}'"
     fi
     if [ -n "$subminor_name" ]; then
       eval "$subminor_name='${split_arr[3]}'"
+    fi
+    if [ -n "$tail_name" ]; then
+      eval "$tail_name='${split_arr[4]}'"
     fi
     if [ -n "$epoch_name" ]; then
       eval "$epoch_name='${split_arr[0]}'"
@@ -76,17 +85,19 @@ function check_version_ge() {
     local v1_major
     local v1_minor
     local v1_subminor
+    local v1_tail
     local v1_epoch
     local v2_major
     local v2_minor
     local v2_subminor
+    local v2_tail
     local v2_epoch
 
-    split_version "$version1" v1_major v1_minor v1_subminor v1_epoch || return 2
-    split_version "$version2" v2_major v2_minor v2_subminor v2_epoch || return 2
+    split_version "$version1" v1_major v1_minor v1_subminor v1_tail v1_epoch || return 2
+    split_version "$version2" v2_major v2_minor v2_subminor v2_tail v2_epoch || return 2
 
-    # echo "v1=$v1_epoch:$v1_major.$v1_minor.$v1_subminor"
-    # echo "v2=$v2_epoch:$v2_major.$v2_minor.$v2_subminor"
+    # echo "v1=$v1_epoch:$v1_major.$v1_minor.$v1_subminor($v1_tail)"
+    # echo "v2=$v2_epoch:$v2_major.$v2_minor.$v2_subminor($v2_tail)"
 
     # We only compare epochs if both versions provided an epoch number > 0
     if [[ "$v1_epoch" -gt 0 ]]; then
@@ -204,10 +215,16 @@ function invalidate_os_package_list() {
 function update_gpg_keyring() {
     local url="$1"; shift
     local dest_file="$1"; shift
+    local filter="$1"
+
+    if [ -z "$filter" ]; then
+        filter="cat"
+    fi
 
     local tmp_file="$(get_tmp_dir)/tmp_gpg_keyring"
     curl -fsSL "$url" > "$tmp_file.pub" || return $?
-    gpg --dearmor <"$tmp_file.pub" >"$tmp_file.gpg" || return $?
+    # echo "filter is '$filter'" >&2
+    $filter <"$tmp_file.pub" >"$tmp_file.gpg" || return $?
     if [ -e "$dest_file" ]; then
         if files_are_identical "$tmp_file.gpg" "$dest_file"; then
             return 0
@@ -223,33 +240,29 @@ function update_gpg_keyring() {
 function install_gpg_keyring_if_missing() {
     local url="$1"; shift
     local dest_file="$1"; shift
+    local filter="$1"
 
     if [ -e "$dest_file" ]; then
       return 0
     fi
 
-    update_gpg_keyring "$url" "$dest_file"
+    update_gpg_keyring "$url" "$dest_file" "$filter"
     return $?
+}
+
+function get_distro_name() {
+  lsb_release -cs || return $?
 }
 
 function update_apt_sources_list() {
     local dest_file="$1"; shift
     local signed_by="$1"; shift
     local url="$1"; shift
-    local variant="$1"
-    local lsbrelease="$2"
-
-    if [ -z "$variant" ]; then
-      variant="stable"
-    fi
-
-    if [ -z "$lsbrelease" ]; then
-      lsbrelease="$(lsb_release -cs)"
-    fi
+    # remaining args are added to end of constructed line, in order
     local arch="$(dpkg --print-architecture)"
 
     local tmp_file="$(get_tmp_dir)/tmp_apt_source.list"
-    echo "deb [arch=$arch signed-by=$signed_by] $url $lsbrelease $variant" > "$tmp_file"
+    echo "deb [arch=$arch signed-by=$signed_by] $url" "$@" > "$tmp_file"
     if [ -e "$dest_file" ]; then
         if files_are_identical "$tmp_file" "$dest_file"; then
             return 0
@@ -267,18 +280,17 @@ function update_apt_sources_list() {
     return 0
 }
 
-function install_apt_sources_list_if_missing_if_missing() {
+function install_apt_sources_list_if_missing() {
     local dest_file="$1"; shift
     local signed_by="$1"; shift
     local url="$1"; shift
-    local variant="$1"
-    local lsbrelease="$2"
+    # remaining args are added to end of constructed line, in order
 
     if [ -e "$dest_file "]; then
       return 0
     fi
 
-    update_apt_sources_list "$dest_file" "$signed_by" "$url" "$variant" "$lsbrelease"
+    update_apt_sources_list "$dest_file" "$signed_by" "$url" "$@"
     return $?
 }
 

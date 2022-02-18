@@ -20,6 +20,9 @@ pulumi = "^3.24.1"
 boto3 = "^1.20.50"
 pulumi-aws = "^4.37.1"
 PyYAML = "^6.0"
+dynaconf = "^3.1.7"
+decouple = "^0.0.7"
+Jinja2 = "^3.0.3"
 
 [tool.poetry.dev-dependencies]
 
