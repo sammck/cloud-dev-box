@@ -24,7 +24,7 @@ _DEBUG: bool = False
 if __name__ == "__main__":
   _DEBUG: bool = True
 
-_DEBUG = True
+#_DEBUG = True
 
 def dp(*args, **kwargs):
   if _DEBUG:
@@ -32,6 +32,12 @@ def dp(*args, **kwargs):
     print(*args, **kwargs)
 
 dp(f"config.py file is {__file__}")
+
+def get_virtualenv_dir() -> Optional[str]:
+  result = sys.prefix
+  if result == sys.base_prefix:
+    result = None
+  return result
 
 project_prefix = "DEVBOX"
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -89,8 +95,9 @@ def func_get_git_user_friendly_name(ctx: jinja2.runtime.Context, settings: Dynac
 
 _default_aws_region_cache: Dict[str, str] = {}  # cache mapping AWS profile name to a default region
 @settings_func
-def func_get_default_aws_region(ctx: jinja2.runtime.Context, settings: Dynaconf) -> str:
-  aws_profile = settings.get('AWS_PROFILE', None)
+def func_get_default_aws_region(ctx: jinja2.runtime.Context, settings: Dynaconf, aws_profile: Optional[str]=None) -> str:
+  if aws_profile is None or aws_profile == '':
+    aws_profile = settings.get('AWS_PROFILE', None)
   if aws_profile == '':
     aws_profile = 'default'
   region = _default_aws_region_cache.get(aws_profile, None)
@@ -104,8 +111,9 @@ def func_get_default_aws_region(ctx: jinja2.runtime.Context, settings: Dynaconf)
   return region
 
 _aws_session_cache: Dict[Tuple[str, str], boto3.session.Session] = {}  # Cache mapping (profile, region) to a boto3 session
-def get_aws_session(settings: Dynaconf) -> boto3.session.Session:
-  aws_profile = settings.get('AWS_PROFILE', None)
+def get_aws_session(settings: Dynaconf, aws_profile: Optional[str] = None) -> boto3.session.Session:
+  if aws_profile is None or aws_profile == '':
+    aws_profile = settings.get('AWS_PROFILE', None)
   if aws_profile == '':
     aws_profile = 'default'
   aws_region = settings.get('AWS_REGION', None)
@@ -119,9 +127,14 @@ def get_aws_session(settings: Dynaconf) -> boto3.session.Session:
     _aws_session_cache[key] = sess
   return sess
 
+def get_global_aws_session(settings: Dynaconf, aws_profile: Optional[str] = None) -> boto3.session.Session:
+  if aws_profile is None or aws_profile == '':
+    aws_profile = settings.get('GLOBAL_AWS_PROFILE', None)
+  return get_aws_session(settings, aws_profile=aws_profile)
+
 @settings_func
-def func_get_default_aws_account(ctx: jinja2.runtime.Context, settings: Dynaconf) -> str:
-  sess = get_aws_session(settings)
+def func_get_aws_account(ctx: jinja2.runtime.Context, settings: Dynaconf, aws_profile: Optional[str]=None) -> str:
+  sess = get_aws_session(settings, aws_profile=aws_profile)
   account: Optional[str] = getattr(sess, 'aws_account_id', None)
   if account is None:
     dp(f"Fetching aws account for session {sess}, profile {sess.profile_name}, region {sess.region_name}")

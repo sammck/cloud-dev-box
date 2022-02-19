@@ -7,7 +7,7 @@ import os
 import json
 import ipaddress
 import yaml
-from docker import APIClient
+#from docker import APIClient
 import pulumi
 from pulumi import (
   ResourceOptions,
@@ -84,7 +84,7 @@ azs: List[str] = sorted(aws.get_availability_zones().names)[:n_azs]
 vpc_cidr: str = default_val(config.get('vpc_cidr'), DEFAULT_CIDR)
 vpc_ip_network: ipaddress.IPv4Network = ipaddress.ip_network(vpc_cidr)
 max_n_subnet_id_bits = 32 - vpc_ip_network.prefixlen
-n_potential_subnets: int = default_val(config.get('n_potential_subnets'), DEFAULT_N_POTENTIAL_SUBNETS)
+n_potential_subnets: int = default_val(config.get_int('n_potential_subnets'), DEFAULT_N_POTENTIAL_SUBNETS)
 if n_potential_subnets < 8 or n_potential_subnets > (1 << 31) or (n_potential_subnets & (n_potential_subnets - 1)) != 0:
   raise RuntimeError("Config value n_potential_subnets must be a power of 2 >= 8: %d" % n_potential_subnets)
 n_subnet_id_bits: int = 0
@@ -389,22 +389,23 @@ front_end_keypair = aws.ec2.KeyPair(
   )
 
 AMI_OWNER_CANONICAL: str = "099720109477"  # The publisher of Ubunti AMI's
+ami_distro = "focal"
+ami_os_version = "20.04"
 
 @future_func
-def get_ami_name_filter(ami_arch: str) -> str:
-  return f"ubuntu/images/hvm-ssd/ubuntu-focal-20.04-{ami_arch}-server-*"
+def get_ami_name_filter(ami_arch: str, ami_distro: str, ami_os_version: str) -> str:
+  return f"ubuntu/images/hvm-ssd/ubuntu-{ami_distro}-{ami_os_version}-{ami_arch}-server-*"
+
+front_end_ami_name_filter = get_ami_name_filter(front_end_ami_arch, ami_distro, ami_os_version)
 
 # Find the most recent AMI for Ubuntu 20.04
 
-front_end_image_arch = front_end_cpu_arch
-if front_end_image_arch == 'x86_64':
-  front_end_image_arch = 'amd64'
 ubuntu = aws.ec2.get_ami(
     most_recent=True,
     filters=[
         aws.ec2.GetAmiFilterArgs(
             name="name",
-            values=[ get_ami_name_filter() ],
+            values=[ front_end_ami_name_filter ],
           ),
         aws.ec2.GetAmiFilterArgs(
             name="virtualization-type",
@@ -509,9 +510,11 @@ front_end_bootstrap_repo = aws.ecr.Repository(
     image_tag_mutability="MUTABLE",
     tags=default_tags,
   )
+front_end_dependencies.append(front_end_bootstrap_repo)
 ecr_domain: Output[str] = account_id + ".dkr.ecr." + region + ".amazonaws.com"
 front_end_bootstrap_full_repo_name: Output[str] = ecr_domain + "/" + front_end_bootstrap_repo_name + ":" + front_end_bootstrap_repo_tag
 
+'''
 # build an amd64 version of the bootstrap image, push it to the ECR repository, and
 # compute the fully hashed image name. This function returns a future that builds
 # and pushes the image after the fully qualified repository name is known.
@@ -554,8 +557,7 @@ def get_hashed_bootstrap_image_url() -> Output[str]:
   return result
 
 hashed_auth_image_url = get_hashed_auth_image_url()
-
-front_end_dependencies.append(front_end_bootstrap_repo)
+'''
 
 
 # create a cloud-config document to attach as user-data to the new ec2 instance.

@@ -1,42 +1,84 @@
 [default]
 # The name of this project. By default, the name of the git project directory
-# containing config.py
+# containing config.py. Should not be overridden by environments other than default.
 project = "@jinja {{get_default_project_name()}}"
 
+# A description of this project. Should not be overridden by environments other than default.
+project_description = "Simple Managed AWS environment for dev/testing."
+
 # The absolute path of the project root directory. You should not need to override this.
+# Should not be overridden by environments other than default.
 project_dir = "@jinja {{get_project_dir()}}"
 
 # The name of the current environment.  Lazily evaluated; Do not override.
 environment = "@jinja {{this.current_env}}"
 
-# The AWS profile to use for managing the stack. Default is "default".
-aws_profile = "default"
+# The AWS profile to use for resources shared by all environments.
+# Default is "default". This value should not be overriden in
+# environments other than "default".
+global_aws_profile = "default"
 
-# The AWS region in which to deploy. Default is the default for the AWS profile being used.
-aws_region = "@jinja {{get_default_aws_region()}}"
+# The AWS region to use for resources shared by all environments.
+# Default is the default region for global_aws_profile.
+# This value should not be overriden in environments other than "default".
+global_aws_region = "@jinja {{get_default_aws_region(this.aws_profile)}}"
 
-# The AWS account number associated with the AWS configuration. You should not need
+# The AWS account number associated with resources shared by all environments (e.g.,
+# The pulumi backend). You should not need to override this, since it is derived
+# from other AWS settings.
+global_aws_account = "@jinja {{get_aws_account(this.global_aws_profile)}}"
+
+# The AWS profile to use for deploying this environment. Default is the same as global_aws_profile.
+# May be overridden for different environments.
+aws_profile = "@jinja {{this.global_aws_profile}}"
+
+# The AWS region in which to deploy. Default is the same as global_aws_region.
+# May be overridden in different environments.
+aws_region = "@jinja {{this.global_aws_region}}"
+
+# The AWS account number associated with this environment. You should not need
 # to override this, since it is derived from other AWS settings.
-aws_account = "@jinja {{get_default_aws_account()}}"
+aws_account = "@jinja {{get_aws_account(this.aws_profile)}}"
+
+# The pulumi project name. Must be unique among projects with the same pulumi_backend.
+# By default, the overall project name is used.  This value should
+# not be overriden in environments other than "default".
+pulumi_project = "@jinja {{this.project}}"
 
 # The pulumi stack that is defined by this environment. May be overridden. By
 # default, the name of the environment is used.
 pulumi_stack = "@jinja {{this.current_env}}"
 
-# The AWS region in which to create the pulumi backend S3 bucket.
-# Default is the region used for deployment. 
-pulumi_backend_aws_region = "@jinja {{this.aws_region}}"
+# The AWS profile pulumi should use for accessing the backend S3 bucket. Must
+# be able to read and write backend bucket/keyspace. Default is the same as global_aws_profile.
+# This value should not be overriden in environments other than "default".
+pulumi_backend_aws_profile = "@jinja {{this.global_aws_profile}}"
 
-# The pulumi backend URI. This is an S3 bucket/key that will hold Pulumi stack state
-# for all stacks in a given region. We self-host Pulumi state so we do not need to
-# mess with the proprietary Pulumi cloud service.  The S3 bucket will be directed
-# on the first deployment. For reliability and performance it is best to have a
-# separate bucket for each region, so that there are not cross-region dependencies.
-# A single bucket may be shared between multiple projects, as long as a subkey
-# distinguishes between them in "pulumi_backend". All pulumi stacks share the same
-# pulumi_backend.
-pulumi_backend_s3_bucket = "@jinja {{this.aws_account}}-{{this.pulumi_backend_aws_region}}-cloud-dev"
-pulumi_backend = "@jinja s3://{{this.pulumi_backend_s3_bucket}}/cloud-dev/prj/{{this.project}}/.pulumi"
+# The AWS region pulumi should use for accessing the backend S3 bucket.
+# Default is the default region for pulumi_backend_aws_profile.
+# This value should not be overriden in environments other than "default".
+pulumi_backend_aws_region = "@jinja {{get_default_aws_region(this.pulumi_backend_aws_profile)}}"
+
+# The AWS account number pulumi will use for accessing the backend S3 bucket.
+# You should not need to override this, since it is derived from other AWS settings.
+pulumi_backend_aws_account = "@jinja {{get_aws_account(this.pulumi_backend_aws_profile)}}"
+
+# The pulumi backend. This is typically an S3 bucket/key that will hold Pulumi stack state
+# for all projects and stacks associated with an AWS account. By default, we self-host
+# Pulumi state on S3 so we do not need to mess with the proprietary Pulumi cloud service.
+# The S3 bucket will be created if necessary on the first use of Pulumi. A single bucket
+# may be shared between multiple projects, as long as a subkey
+# distinguishes between them in "pulumi_backend". This reduces the cost of cloud hosting
+# multiple projects.
+# All pulumi stacks in a project should share the same pulumi_backend. The default defines a
+# single unique backend for the global_aws_account/global_aws_region/pulumi_project. All projects
+# that share global_aws_account and global_aws_region will share the same bucket,
+# and must be distinguished by their pulumi_project.
+# The bucket/keyspace must be readable/writeable by pulumi_backend_aws_profile.
+# The bucket will be automatically created (as a private bucket) in region pulumi_backend_aws_region
+# if necessary.
+pulumi_backend = "@jinja s3://{{this.pulumi_backend_aws_account}}-{{this.global_aws_region}}-cloud-dev/cloud-dev/pulumi/prj/{{this.pulumi_project}}"
+
 # The email address of the person who owns the created AWS resources, for tagging. By
 # default, this will be determined from the local GIT configuration
 owner_email = "@jinja {{get_git_user_email()}}"
@@ -47,7 +89,7 @@ owner_friendly_name = "@jinja {{get_git_user_friendly_name()}}"
 
 # The AWS subnet id of the externally managed VPC subnet that the front end will run in. If
 # provided, then this stack will not create and manage the VPC. Normally
-# this should be left blank.
+# this should be left unassigned.
 #front_end_subnet_id = "subnet-b1618a9b"
 
 # The number of availability zones to provision for a managed AWS VPC. Default 3.
@@ -75,13 +117,15 @@ managed_zone = true
 
 # The fully qualified domain name of the parent domain for the newly created
 # and managed subdomain that the stack will run as. Ignored if zone_name is
-# provided. This zone must already be managed by route53.
+# provided. This zone must already be managed by route53. This or zone_name is a required
+# setting for deployment, and there is no default. The user should generally override
+# it in a local settings file.
 #parent_zone_name = "mydomain.com"
 
 # The single domain name component that will be prefixed to parent_zone name for
 # the newly created and managed subdomain that the stack will run in. Ignored if zone_name
 # is provided. Default is the value of pulumi_stack.
-#zone_prefix = "dev"
+zone_prefix = "@jinja {{this.pulumi_stack}}"
 
 # The EC2 instance type to use for the front end host. Default is "t3.medium".
 front_end_instance_type = "t3.medium"
@@ -94,8 +138,6 @@ front_end_ssh_public_key_file = "~/.ssh/id_rsa.pub"
 
 # The number of gigabytes to allot for disk storage on the front end EC2 instance's root volume. Default is 40.
 front_end_root_volume_size_gb = 40
-
-#myfunc_result = "@jinja {{myfunc(1, 2, 'hello', this.current_env, foo='bar')}}"
 
 [development]
 pulumi_stack = "dev"

@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+
+from typehints import JSONType, JSONDictType
+from typing import Optional, Tuple, Dict, Any, List
+
+from boto3_type_annotations.s3 import Client as S3Client
+from boto3_type_annotations.s3 import ServiceResource as S3Resource
+
+import os
+import sys
+import subprocess
+from pathlib import Path
+import boto3
+import boto3.session
+from botocore.exceptions import ClientError
+
+import json
+import yaml
+import yaml.parser
+try:
+    from yaml import CLoader as YamlLoader, CDumper as YamlDumper
+except ImportError:
+    from yaml import Loader as YamlLoader, Dumper as YamlDumper
+
+from config import settings as default_settings, get_aws_session, get_global_aws_session, Dynaconf
+from config import _DEBUG, dp
+from pulumi_config import PulumiConfig
+
+class PulumiContext:
+  settings: Dynaconf
+  cfg: PulumiConfig
+  backend_created: bool = False
+  main_header_notes: str
+  stack_header_notes: str
+  creds: Optional[JSONDictType] = None
+  workspace_data: Optional[JSONDictType] = None
+  is_in_sync: bool = False
+
+  _env_sess: Optional[boto3.session.Session] = None
+  _global_sess: Optional[boto3.session.Session] = None
+  _global_s3: Optional[S3Client] = None
+  _global_s3_resource: Optional[S3Resource] = None
+
+
+  def __init__(self, settings: Optional[Dynaconf]=None):
+    if settings is None:
+      settings = default_settings
+    self.settings = settings
+    self.cfg = PulumiConfig(self.settings)
+
+    self.main_header_notes = f"# AUTO-GENERATED--DO NOT EDIT! Main Pulumi config file for project {self.settings.project}"
+    self.stack_header_notes = f"# AUTO-GENERATED--DO NOT EDIT! Stack {self.cfg.pulumi_project}-{self.cfg.pulumi_stack} Pulumi config file for project {self.settings.project}"
+
+  def global_sess(self) -> boto3.session.Session:
+    if self._global_sess is None:
+      self._global_sess = get_global_aws_session(self.settings)
+    return self._global_sess
+
+  def env_sess(self) -> boto3.session.Session:
+    if self._env_sess is None:
+      self._env_sess = get_aws_session(self.settings)
+    return self._env_sess
+
+  def global_s3(self) -> S3Client:
+    if self._global_s3 is None:
+      sess = self.global_sess()
+      self._global_s3: S3Client = sess.client('s3')
+    return self._global_s3
+
+  def global_s3_resource(self) -> S3Resource:
+    if self._global_s3_resource is None:
+      sess = self.global_sess()
+      self._global_s3_resource: S3Resource = sess.resource('s3')
+    return self._global_s3_resource
+
+  def global_s3_bucket_exists(self, bucket_name: str):
+    try:
+      self.global_s3().head_bucket(Bucket=bucket_name)
+    except ClientError:
+      # The bucket does not exist or you have no access.
+      return False
+    return True
+
+  def global_s3_create_bucket(self, bucket_name: str, region: Optional[str]=None):
+    s3 = self.global_s3()
+    if region is None or region == '':
+      region = s3.meta.region_name
+    cfg = { 'LocationConstraint': region }
+    resp = s3.create_bucket(
+        Bucket=bucket_name,
+        ACL='private',
+        CreateBucketConfiguration=cfg
+      )
+    s3_resource = self.global_s3_resource()
+    bucket_obj = s3_resource.Bucket(bucket_name)
+    bucket_obj.wait_until_exists()
+
+  def global_s3_create_bucket_if_missing(self, bucket_name: str, region: Optional[str]=None) -> bool:
+    if not self.global_s3_bucket_exists(bucket_name):
+      self.global_s3_create_bucket(bucket_name, region=region)
+      return True
+    return False
+
+  def read_text_file(self, pathname: str) -> str:
+    with open(pathname) as f:
+      result = f.read()
+    return result
+
+  def write_text_file(self, pathname: str, data: str, end_with_newline: bool=True):
+    with open(pathname, 'w') as f:
+      f.write(data)
+      if end_with_newline and not data.endswith('\n'):
+        f.write('\n')
+
+  def read_json_file(self, pathname: str) -> JSONType:
+    json_text = self.read_text_file(pathname)
+    result: JSONType = json.loads(json_text)
+    return result
+
+  def write_json_file(self, pathname: str, data: JSONType):
+    json_text = json.dumps(data, sort_keys=True, indent=2)
+    self.write_text_file(pathname, json_text)
+
+  def read_yaml_file(self, pathname: str) -> JSONType:
+    yaml_text = self.read_text_file(pathname)
+    result: JSONType = yaml.load(yaml_text, Loader=YamlLoader)
+    return result
+
+  def write_yaml_file(self, pathname: str, data: JSONType, header_notes: Optional[str]=None):
+    yaml_text = yaml.dump(data, sort_keys=True, indent=2, Dumper=YamlDumper)
+    if not header_notes is None:
+      header_notes = header_notes.rstrip()
+      if header_notes != '':
+        yaml_text = header_notes + '\n' + yaml_text
+    self.write_text_file(pathname, yaml_text)
+
+  def is_equal_json_data(self, data1: JSONType, data2: JSONType) -> bool:
+    json_text_1 = json.dumps(data1, sort_keys=True)
+    json_text_2 = json.dumps(data2, sort_keys=True)
+    result = (json_text_1 == json_text_2)
+
+  def sync_pulumi_credentials(self):
+    in_sync: bool = True
+    try:
+      creds = self.read_json_file(self.cfg.pulumi_credentials_file)
+    except FileNotFoundError:   # TODO: json.decoder.JSONDecodeError
+      creds: JSONDictType = {}
+      in_sync = False
+
+    current_backend = creds.get("current", None)
+    if not isinstance(current_backend, str) or current_backend != self.cfg.backend:
+      creds["current"] = self.cfg.backend
+      current_backend = self.cfg.backend
+      in_sync = False
+
+    accounts = creds.get("accounts", None)
+    if not isinstance(accounts, dict):
+      accounts = {}
+      creds["accounts"] = accounts
+      in_sync = False
+
+    backend_account = accounts.get(self.cfg.backend, None)
+    if not isinstance(backend_account, dict):
+      backend_account = {}
+      accounts[self.cfg.backend] = backend_account
+      in_sync = False
+
+    backend_account_last_validated_at = backend_account.get("lastValidataedAt", None)
+    if not isinstance(backend_account_last_validated_at, str):
+      backend_account_last_validated_at = "0001-01-01T00:00:00Z"
+      backend_account["lastValidatedAt"] = backend_account_last_validated_at
+      in_sync = False
+
+    access_tokens = creds.get("accessTokens", None)
+    if not isinstance(access_tokens, dict):
+      access_tokens = {}
+      creds["accessTokens"] = access_tokens
+      in_sync = False
+
+    access_token = access_tokens.get(self.cfg.backend, None)
+    if not isinstance(access_token, str) or access_token != "":
+      access_token = ""
+      access_tokens[self.cfg.backend] = access_token
+      in_sync = False
+
+    if not in_sync:
+      self.write_json_file(self.cfg.pulumi_credentials_file, creds)
+
+    self.creds: JSONDictType = creds
+
+  def sync_main_cfg(self):
+    in_sync: bool = True
+    try:
+      cfg = self.read_yaml_file(self.cfg.pulumi_main_cfg_file)
+    except (FileNotFoundError, yaml.parser.ParserError):
+      cfg: JSONDictType = {}
+      in_sync = False
+
+    if in_sync:
+      in_sync = self.is_equal_json_data(cfg, self.cfg.main_data)
+
+    if not in_sync:
+      self.write_yaml_file(self.cfg.pulumi_main_cfg_file, self.cfg.main_data, header_notes=self.main_header_notes)
+
+  def sync_stack_cfg(self):
+    if not self.cfg.pulumi_stack_cfg_file is None:
+      in_sync: bool = True
+      try:
+        cfg = self.read_yaml_file(self.cfg.pulumi_stack_cfg_file)
+      except (FileNotFoundError, yaml.parser.ParserError):
+        cfg: JSONDictType = {}
+        in_sync = False
+
+      if in_sync:
+        in_sync = self.is_equal_json_data(cfg, self.cfg.stack_data)
+
+      if not in_sync:
+        self.write_yaml_file(self.cfg.pulumi_stack_cfg_file, self.cfg.stack_data, header_notes=self.stack_header_notes)
+
+  def sync_main_script(self):
+    correct_link_destination = os.path.relpath(self.cfg.pulumi_main_script_source_file, os.path.dirname(self.cfg.pulumi_main_script_target_file))
+    try:
+
+      link_destination = os.readlink(self.cfg.pulumi_main_script_target_file)
+      if link_destination == correct_link_destination:
+        return
+      os.remove(self.cfg.pulumi_main_script_target_file)
+    except FileNotFoundError:
+      pass
+    except OSError:
+      os.remove(self.cfg.pulumi_main_script_target_file)
+
+    os.symlink(correct_link_destination, self.cfg.pulumi_main_script_target_file)
+
+  def sync_workspace(self):
+    in_sync: bool = True
+    try:
+      ws = self.read_json_file(self.cfg.pulumi_workspace_file)
+    except FileNotFoundError:   # TODO: json.decoder.JSONDecodeError
+      ws: JSONDictType = {}
+      in_sync = False
+
+    current_stack = ws.get("stack", None)
+    if not isinstance(current_stack, str) or current_stack != self.cfg.pulumi_stack:
+      ws["stack"] = self.cfg.pulumi_stack
+      current_stack = self.cfg.pulumi_stack
+      in_sync = False
+
+    if not in_sync:
+      self.write_json_file(self.cfg.pulumi_workspace_file, ws)
+
+    self.workspace_data: JSONDictType = ws
+
+  def sync_config(self):
+    # print(f"main cfg={json.dumps(self.cfg.main_data)}")
+    # print(f"stack cfg={json.dumps(self.cfg.stack_data)}")
+    if not self.is_in_sync:
+      if not os.path.exists(self.cfg.pulumi_data_dir):
+        Path( self.cfg.pulumi_data_dir ).mkdir( parents=True, exist_ok=True )    
+      if not os.path.exists(self.cfg.pulumi_workspaces_dir):
+        Path( self.cfg.pulumi_workspaces_dir ).mkdir( parents=True, exist_ok=True )    
+      self.sync_pulumi_credentials()
+      self.sync_main_cfg()
+      self.sync_stack_cfg()
+      self.sync_main_script()
+      self.sync_workspace()
+      self.is_in_sync = True
+
+  def get_or_create_pulumi_backend(self) -> str:
+    if not self.backend_created:
+      bucket = self.cfg.backend_bucket
+      created = self.global_s3_create_bucket_if_missing(bucket)
+      if created:
+        dp(f"Created S3 bucket {bucket} for pulumi backend")
+      self.backend_created = True
+    return self.cfg.backend
+
+  def _fix_raw_popen_args(self, arglist: List[str], kwargs: Dict[str, Any]) -> List[str]:
+    arglist = [ self.cfg.pulumi_prog ] + arglist
+    osenviron = dict(self.cfg.osenviron)
+    env = kwargs.pop('env', None)
+    if not env is None:
+      osenviron.update(env)
+    kwargs['env'] = env
+    kwargs['cwd'] = self.cfg.pulumi_data_dir
+    return arglist
+
+
+  def raw_pulumi_Popen(self, arglist: List[str], **kwargs) -> subprocess.Popen:
+    arglist = self._fix_raw_popen_args(arglist, kwargs)
+    return subprocess.Popen(arglist, **kwargs)
+
+  def raw_pulumi_check_call(self, arglist: List[str], **kwargs) -> int:
+    arglist = self._fix_raw_popen_args(arglist, kwargs)
+    return subprocess.check_call(arglist, **kwargs)
+
+  def raw_pulumi_call(self, arglist: List[str], **kwargs) -> int:
+    arglist = self._fix_raw_popen_args(arglist, kwargs)
+    return subprocess.call(arglist, **kwargs)
+
+if __name__ == '__main__':
+  pctx = PulumiContext()
+  backend = pctx.get_or_create_pulumi_backend()
+  print(f"Pulumi backend established at {backend}", file=sys.stderr)
+  pctx.sync_config()
+  exit_code = pctx.raw_pulumi_call(sys.argv[1:])
+  if exit_code != 0:
+    sys.exit(exit_code)
