@@ -6,15 +6,15 @@
         "editor.tabSize": 2  
     },
     "terminal.integrated.env.osx": {
-      "PATH": "${workspaceFolder}/tools:${env:PATH}",
+      "PATH": "${workspaceFolder}/bin:${env:PATH}",
       "PYTHONPATH": "${workspaceFolder}/src/python:${env:PYTHONPATH}"
     },
     "terminal.integrated.env.linux": {
-      "PATH": "${workspaceFolder}/tools:${env:PATH}",
+      "PATH": "${workspaceFolder}/bin:${env:PATH}",
       "PYTHONPATH": "${workspaceFolder}/src/python:${env:PYTHONPATH}"
     },
     "terminal.integrated.env.windows": {
-      "PATH": "${workspaceFolder}/tools:${env:PATH}",
+      "PATH": "${workspaceFolder}/bin:${env:PATH}",
       "PYTHONPATH": "${workspaceFolder}/src/python:${env:PYTHONPATH}"
     }
   }

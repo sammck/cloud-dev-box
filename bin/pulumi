@@ -5,15 +5,7 @@ set -e
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_DIR="$( cd -- "$SCRIPT_DIR/.." &> /dev/null && pwd )"
 BIN_DIR="$PROJECT_DIR/bin"
-VENV_DIR="$PROJECT_DIR/.venv"
-PULUMI_DIR="$PROJECT_DIR/install/pulumi"
-PULUMI="$PULUMI_DIR/bin/pulumi"
 
-PYTHON="$VENV_DIR/bin/python3"
+source "$BIN_DIR/activate"
 
-export PULUMI_HOME="$PULUMI_DIR"
-export PULUMI_PYTHON_CMD="$PYTHON"
-PULUMI_BACKEND_URL="$("$PYTHON" "$BIN_DIR/get_pulumi_backend_url.py")" || exit $?
-export PULUMI_BACKEND_URL
-
-$PULUMI "$@" || exit $?
+"$PYTHON" -m pulumi_wrap "$@" || exit $?

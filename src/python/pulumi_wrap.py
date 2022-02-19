@@ -281,7 +281,7 @@ class PulumiContext:
     env = kwargs.pop('env', None)
     if not env is None:
       osenviron.update(env)
-    kwargs['env'] = env
+    kwargs['env'] = osenviron
     kwargs['cwd'] = self.cfg.pulumi_data_dir
     return arglist
 
@@ -296,6 +296,7 @@ class PulumiContext:
 
   def raw_pulumi_call(self, arglist: List[str], **kwargs) -> int:
     arglist = self._fix_raw_popen_args(arglist, kwargs)
+    print(f"subprocess.call(args={arglist}, kwargs={json.dumps(kwargs, sort_keys=True, indent=2)})", file=sys.stderr)
     return subprocess.call(arglist, **kwargs)
 
 if __name__ == '__main__':
