@@ -10,6 +10,8 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+import argparse
+
 import boto3
 import boto3.session
 from botocore.exceptions import ClientError
@@ -35,6 +37,7 @@ class PulumiContext:
   creds: Optional[JSONDictType] = None
   workspace_data: Optional[JSONDictType] = None
   is_in_sync: bool = False
+  verbose_level: int = 0
 
   _env_sess: Optional[boto3.session.Session] = None
   _global_sess: Optional[boto3.session.Session] = None
@@ -296,14 +299,99 @@ class PulumiContext:
 
   def raw_pulumi_call(self, arglist: List[str], **kwargs) -> int:
     arglist = self._fix_raw_popen_args(arglist, kwargs)
-    print(f"subprocess.call(args={arglist}, kwargs={json.dumps(kwargs, sort_keys=True, indent=2)})", file=sys.stderr)
+    #print(f"subprocess.call(args={arglist}, kwargs={json.dumps(kwargs, sort_keys=True, indent=2)})", file=sys.stderr)
     return subprocess.call(arglist, **kwargs)
+
+  def parse_args(self, arglist: Optional[List[str]]=None) -> argparse.Namespace:
+    pctx = self
+
+    class MyParser(argparse.ArgumentParser):
+      def print_help(self, file=None) -> int:
+        pctx.raw_pulumi_check_call([ '--help' ])
+
+      def print_usage(self, file=None) -> int:
+        pctx.raw_pulumi_check_call([ '--help' ])
+
+    parser = MyParser(description='Pulumi wrapper.')
+
+    parser.add_argument('--color', default=None,
+                        help='Colorize output. Choices are: always, never, raw, auto (default "auto")')
+    parser.add_argument('--cwd', '-C', default=None,
+                        help='Run pulumi as if it had been started in another directory')
+    parser.add_argument('--disable-integrity-checking', action='store_true', default=False,
+                        help='Disable integrity checking of checkpoint files')
+    parser.add_argument('--emoji', '-e', action='store_true', default=False,
+                        help='Enable emojis in the output')
+    parser.add_argument('--logflow', action='store_true', default=False,
+                        help='Flow log settings to child processes (like plugins)')
+    parser.add_argument('--logtostderr', action='store_true', default=False,
+                        help='Log to stderr instead of to files')
+    parser.add_argument('--non-interactive', action='store_true', default=False,
+                        help='Disable interactive mode for all commands')
+    parser.add_argument('--profiling', default=None,
+                        help='Emit CPU and memory profiles and an execution trace to \'[filename].[pid].{cpu,mem,trace}\', respectively')
+    parser.add_argument('--tracing', default=None,
+                        help='Emit tracing to the specified endpoint. Use the file: scheme to write tracing data to a local file')
+    parser.add_argument('--verbose', '-v', type=int, default=None,
+                        help='Enable verbose logging (e.g., v=3); anything >3 is very verbose')
+    parser.add_argument('subcommand', nargs=argparse.REMAINDER, default=[])
+
+    args = parser.parse_args(arglist)
+
+    arglist: List[str] = []
+    if not args.color is None:
+      arglist.extend(['--color', args.color])
+    if not args.cwd is None:
+      raise RuntimeError("--cwd, -C are not supported by the pulumi wrapper")
+      # arglist.extend(['--cwd', args.cwd])
+    if args.emoji:
+      arglist.extend(['--emoji'])
+    if args.logflow:
+      arglist.extend(['--logflow'])
+    if args.logtostderr:
+      arglist.extend(['--logtostderr'])
+    if args.non_interactive:
+      arglist.extend(['--non-interactive'])
+    if not args.profiling is None:
+      arglist.extend(['--profiling', args.profiling])
+    if not args.tracing is None:
+      arglist.extend(['--tracing', args.tracing])
+    if not args.verbose is None:
+      self.verbose_level = args.verbose
+      arglist.extend(['--verbose', str(args.verbose)])
+    args.global_option_arglist = arglist
+
+    return args
+
+  def cmd_about(self, args: List[str], global_options: argparse.Namespace) -> int:
+    print(f"Environment variables: {json.dumps(self.cfg.osenviron, sort_keys=True, indent=2)}")
+    return self.raw_pulumi_call(global_options.global_option_arglist + [ 'about' ] + args)
+
+  def pulumi_call(self, arglist: Optional[List[str]]=None, **kwargs) -> int:
+
+    args = self.parse_args(arglist)
+
+    backend = self.get_or_create_pulumi_backend()
+    if self.verbose_level > 1:
+      print(f"Pulumi backend established at {backend}", file=sys.stderr)
+    self.sync_config()
+    if self.verbose_level > 1:
+      print(f"Pulumi config synchronized", file=sys.stderr)
+
+    if len(args.subcommand) > 0:
+      cmd = args.subcommand[0]
+      remargs = args.subcommand[1:]
+      if cmd == 'about':
+        return self.cmd_about(remargs, args)
+
+    arglist = args.global_option_arglist + args.subcommand
+
+
+    exit_code = self.raw_pulumi_call(arglist)
+    return exit_code
 
 if __name__ == '__main__':
   pctx = PulumiContext()
-  backend = pctx.get_or_create_pulumi_backend()
-  print(f"Pulumi backend established at {backend}", file=sys.stderr)
-  pctx.sync_config()
-  exit_code = pctx.raw_pulumi_call(sys.argv[1:])
+  exit_code = pctx.pulumi_call()
   if exit_code != 0:
     sys.exit(exit_code)

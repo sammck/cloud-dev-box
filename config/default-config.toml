@@ -63,7 +63,16 @@ pulumi_backend_aws_region = "@jinja {{get_default_aws_region(this.pulumi_backend
 # You should not need to override this, since it is derived from other AWS settings.
 pulumi_backend_aws_account = "@jinja {{get_aws_account(this.pulumi_backend_aws_profile)}}"
 
-# The pulumi backend. This is typically an S3 bucket/key that will hold Pulumi stack state
+# The pulumi backend. This can be one of:
+#
+# - A blank string or "https://api.pulumi.com" or "http. This will use your hosted saas account on pulumi.com
+#   To manage the state of all your stacks. It's free for a limited number of projects and stacks,
+#   but you must first create an accouint at https://app.pulumi.com. This service provides a nice
+#   web UI for managing projects and states.  This backend automatically includes your pulumi_project
+# - 
+#
+
+This is typically an S3 bucket/key that will hold Pulumi stack state
 # for all projects and stacks associated with an AWS account. By default, we self-host
 # Pulumi state on S3 so we do not need to mess with the proprietary Pulumi cloud service.
 # The S3 bucket will be created if necessary on the first use of Pulumi. A single bucket

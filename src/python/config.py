@@ -14,7 +14,8 @@ import boto3.session
 import botocore.config
 import pprint
 import functools
-
+import hashlib
+from secret_kv import open_kv_store, KvStore
 from dynaconf.utils.parse_conf import jinja_env
 from jinja2 import pass_eval_context, pass_context
 import jinja2.runtime
@@ -39,24 +40,42 @@ def get_virtualenv_dir() -> Optional[str]:
     result = None
   return result
 
+
 project_prefix = "DEVBOX"
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 dp(f"project dir is {project_dir}")
 default_project_name = os.path.basename(project_dir)
-
-def full_type_name(o):
-  klass = o.__class__
-  module = klass.__module__
-  if module == 'builtins':
-    return klass.__qualname__
-  return module + '.' + klass.__qualname__
 
 def _removeprefix(s: str, prefix: str) -> str:
   if s.startswith(prefix):
     s = s[len(prefix):]
   return s
 
+_secret_store: Optional[KvStore] = None
+def secret_store() -> KvStore:
+  if _secret_store is None:
+    _secret_store = open_kv_store(project_dir)
+  return _secret_store
+
 def settings_func(func: Callable[..., str]) -> Callable[..., str]:
+  """A decorator that defines a function usable within @jinja config values.
+
+  Example:
+
+    @settings_func
+    def func_myfunc(ctx: jinja2.runtime.Context, settings: Dynaconf, *args, **kwargs) -> str:
+      ...
+
+
+  Args:
+      func (Callable[..., str]): A function declared as:
+
+          def func_<func-name>(ctx: jinja2.runtime.Context, settings: Dynaconf, <positional-args...>, <named-args...>) -> str: 
+            ...
+
+  Returns:
+      Callable[..., str]: The decorated function, already registered with jinja
+  """
   @pass_context
   def wrapper(ctx: jinja2.runtime.Context, *args, **kwargs):
     settings: Dynaconf = ctx['this']
@@ -68,6 +87,13 @@ def settings_func(func: Callable[..., str]) -> Callable[..., str]:
   jinja_env.globals[fname] = wrapper
   dp(f"Registered jinja function {fname}")
   return wrapper  
+
+@settings_func
+def func_get_secret_str(ctx: jinja2.runtime.Context, settings: Dynaconf,  key: str) -> str:
+  result = secret_store().get(key).data
+  if not isinstance(result, str):
+    raise TypeError(f"secret-kv value at key '{key}' is not a str")
+  return result
 
 @settings_func
 def func_get_project_dir(ctx: jinja2.runtime.Context, settings: Dynaconf) -> str:

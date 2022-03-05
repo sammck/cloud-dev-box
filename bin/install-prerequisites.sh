@@ -12,7 +12,7 @@ source "$BIN_DIR/bash-helpers.sh"
 
 pkglist=()
 
-add_os_packages_if_missing pkglist build-essential meson ninja-build python3.8 python3.8-venv
+add_os_packages_if_missing pkglist build-essential meson ninja-build python3.8 python3.8-venv sqlcipher
 
 add_os_package_if_command_missing pkglist sha256sum coreutils
 add_os_package_if_command_missing pkglist curl

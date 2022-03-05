@@ -135,7 +135,7 @@ class PulumiConfig:
     for key in self.excluded_env_vars:
       if key in osenviron:
         del osenviron[key]
-    osenviron['PULUMI_HOME'] = self.pulumi_data_dir
+    osenviron['PULUMI_HOME'] = self.pulumi_install_dir
     self.osenviron = osenviron
 
   def build_main_data(self) -> JSONDictType:
