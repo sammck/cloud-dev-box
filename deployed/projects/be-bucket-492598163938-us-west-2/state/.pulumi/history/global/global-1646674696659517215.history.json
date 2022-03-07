@@ -1,0 +1,28 @@
+{
+    "kind": "resource-import",
+    "startTime": 1646674693,
+    "message": "in progress",
+    "environment": {
+        "exec.kind": "cli",
+        "git.author": "Sam McKelvie",
+        "git.author.email": "sammck@gmail.com",
+        "git.committer": "Sam McKelvie",
+        "git.committer.email": "sammck@gmail.com",
+        "git.dirty": "true",
+        "git.head": "993ba9628feb646d28b92b44ef78f444ec0aff6c",
+        "git.headName": "refs/heads/main",
+        "vcs.kind": "github.com",
+        "vcs.owner": "sammck",
+        "vcs.repo": "cloud-dev-box"
+    },
+    "config": {
+        "aws:region": "us-west-2"
+    },
+    "version": 0,
+    "result": "succeeded",
+    "endTime": 1646674696,
+    "resourceChanges": {
+        "create": 1,
+        "import": 1
+    }
+}

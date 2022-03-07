@@ -1,0 +1,10 @@
+# AUTO-GENERATED--DO NOT EDIT! Deployed project config file for project be-bucket-492598163938-us-west-2
+backend:
+  name: file
+  options:
+    uri: ./state
+secrets:
+  name: secret_kv_passphrase
+  options:
+    secret_kv_passphrase_key: pulumi/passphrase/be-bucket-492598163938-us-west-2
+env: {}
